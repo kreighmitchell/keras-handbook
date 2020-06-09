@@ -1,9 +1,9 @@
 """
-Title: Metric learning using crossentropy
+Title: Metric learning for image similarity search
 Author: [Mat Kelcey](https://twitter.com/mat_kelcey)
 Date created: 2020/06/05
-Last modified: 2020/06/05
-Description: Example of using metric learning using crossentropy on synthetic data.
+Last modified: 2020/06/09
+Description: Example of using similarity metric learning on CIFAR-10 images.
 """
 """
 ## Overview
@@ -239,7 +239,7 @@ embeddings are unit length we can calculate cosine similarity via dot products.
 
 near_neighbours_per_example = 10
 
-embeddings = model(x_test).numpy()
+embeddings = model.predict(x_test)
 gram_matrix = np.einsum("ae,be->ab", embeddings, embeddings)
 near_neighbours = np.argsort(gram_matrix.T)[:, -(near_neighbours_per_example + 1) :]
 
