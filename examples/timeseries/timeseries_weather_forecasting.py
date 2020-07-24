@@ -15,12 +15,11 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from tensorflow import keras
-import seaborn as sns
 
 """
 ## Climate Data Time-Series
 
-We would be using Jena Climate dataset recorded by the
+We will be using Jena Climate dataset recorded by the
 [Max Planck Institute for Biogeochemistry](https://www.bgc-jena.mpg.de/wetter/).
 The dataset consists of 14 features such as temperature, pressure, humidity etc, recorded once per
 10 minutes.
@@ -31,26 +30,16 @@ in Jena, Germany
 **Time-frame Considered**: Jan 10, 2009 - December 31, 2016
 
 
-The table below shows the column names, their value formats and description.
+The table below shows the column names, their value formats, and their description.
 
 Index| Features      |Format             |Description
 -----|---------------|-------------------|-----------------------
 1    |Date Time      |01.01.2009 00:10:00|Date-time reference
-2    |p (mbar)       |996.52             |The pascal SI derived unit of pressure used to
-     |               |                   |quantify internal pressure. Meteorological
-     |               |                   |reports typically state atmospheric pressure
-     |               |                   |in millibars.
+2    |p (mbar)       |996.52             |The pascal SI derived unit of pressure used to quantify internal pressure. Meteorological reports typically state atmospheric pressure in millibars.
 3    |T (degC)       |-8.02              |Temperature in Celsius
 4    |Tpot (K)       |265.4              |Temperature in Kelvin
-5    |Tdew (degC)    |-8.9               |Temperature in Celsius relative to humidity.
-     |               |                   |Dew Point is a measure of the absolute amount
-     |               |                   |of water in the air, the DP is the temperature
-     |               |                   |at which the air cannot hold all the moisture in
-     |               |                   |it and water condenses.
-6    |rh (%)         |93.3               |Relative Humidity is a measure of how saturated
-     |               |                   |the air is with water vapor, the %RH determines
-     |               |                   |the amount of water contained within collection
-     |               |                   |objects.
+5    |Tdew (degC)    |-8.9               |Temperature in Celsius relative to humidity. Dew Point is a measure of the absolute amount of water in the air, the DP is the temperature at which the air cannot hold all the moisture in it and water condenses.
+6    |rh (%)         |93.3               |Relative Humidity is a measure of how saturated the air is with water vapor, the %RH determines the amount of water contained within collection objects.
 7    |VPmax (mbar)   |3.33               |Saturation vapor pressure
 8    |VPact (mbar)   |3.11               |Vapor pressure
 9    |VPdef (mbar)   |0.22               |Vapor pressure deficit
@@ -62,21 +51,23 @@ Index| Features      |Format             |Description
 15   |wd (deg)       |152.3              |Wind direction in degrees
 """
 
-uri = "https://storage.googleapis.com/tensorflow/tf-keras-datasets/jena_climate_2009_2016.csv.zip"
-csv_path = keras.utils.get_file(
-    origin=uri, fname="jena_climate_2009_2016.csv", extract=True
-)
+from zipfile import ZipFile
+import os
 
-# checking out the first 5 rows of the dataset
+uri = "https://storage.googleapis.com/tensorflow/tf-keras-datasets/jena_climate_2009_2016.csv.zip"
+zip_path = keras.utils.get_file(origin=uri, fname="jena_climate_2009_2016.csv.zip")
+zip_file = ZipFile(zip_path)
+zip_file.extractall()
+csv_path = "jena_climate_2009_2016.csv"
+
 df = pd.read_csv(csv_path)
-df.head()
 
 """
 ## Raw Data Visualization
 
-To give us an easy visual of the data we are working with, each feature has been plotted.
-This shows the distinct pattern per feature over the timeperiod of 2009 to 2016.
-It also easily shows where anomalies are present, which will be addressed during normalization.
+To give us a sense of the data we are working with, each feature has been plotted below.
+This shows the distinct pattern of each feature over the time period from 2009 to 2016.
+It also shows where anomalies are present, which will be addressed during normalization.
 """
 
 titles = [
@@ -171,66 +162,29 @@ def show_heatmap(data):
 
 show_heatmap(df)
 
-"""
-The input data will include pressure, temperature (in Celsius) and specific humidity.
-The below line graphs show each feature graphed by hour, month and year.
-"""
-
-
-def show_time_based_visualizations(data, idx):
-    selected_feature = feature_keys[idx]
-    fig, axes = plt.subplots(
-        nrows=1, ncols=3, figsize=(15, 5), dpi=80, facecolor="w", edgecolor="k"
-    )
-
-    dataframe = data.copy()
-    dataframe.index = pd.to_datetime(data[date_time_key])
-
-    x_data = [dataframe.index.hour, dataframe.index.month, dataframe.index.year]
-    x_labels = ["Hour of Day", "Month", "Year"]
-
-    for i in range(3):
-        selected_ax = axes[i]
-        sns.lineplot(x=x_data[i], y=dataframe[selected_feature], ax=selected_ax)
-        selected_ax.set(xlabel=x_labels[i], ylabel=titles[idx])
-    plt.tight_layout()
-    plt.show()
-    return
-
-
-# plot pressure
-show_time_based_visualizations(df, 0)
-# plot temperature
-show_time_based_visualizations(df, 1)
-# plot specific humidity
-show_time_based_visualizations(df, 8)
 
 """
 ## Data Preprocessing
 
-Here we are picking ~300000 data points for training. The observation is recorded every
-10 mins, that means 6 times in an hour. The sampling is done every one hour since a
-drastic change is not expected within 60 minutes. Thus step variable is equal to 6.
+Here we are picking ~300,000 data points for training. Observation is recorded every
+10 mins, that means 6 times per hour. We will resample one point per hour since no
+drastic change is expected within 60 minutes. We do this via the `sampling_rate`
+argument in `timeseries_dataset_from_array` utility.
 
-We are tracking data from past 720 timestamps (i.e. 720/6=120 hours) and this will be
-used to predict the temperature after 72 timestamps(i.e. 76/6=12 hours).
+We are tracking data from past 720 timestamps (720/6=120 hours). This data will be
+used to predict the temperature after 72 timestamps (76/6=12 hours).
 
-Raw data is normalized using a z score formula. Since every feature has values with
-varying ranges, normalization is done to confine the values in a range of [0,1] before
+Since every feature has values with
+varying ranges, we do normalization to confine feature values to a range of `[0, 1]` before
 training a neural network.
-It is done by subtracting the mean and dividing by the standard deviation of each feature
+We do this by subtracting the mean and dividing by the standard deviation of each feature.
 
-71.5 % of the data will be used to train the model, i.e. 300693 rows. split_fraction can
+71.5 % of the data will be used to train the model, i.e. 300,693 rows. `split_fraction` can
 be changed to alter this percentage.
 
 The model is shown data for first 5 days i.e. 720 observations, that are sampled every
 hour. The temperature after 72 (12 hours * 6 observation per hour) observation will be
 used as a label.
-
-We are using 0.001 as learning rate which default for the Adam optimizer. It is a
-hyperparamater can be tuned to improve results.
-
-We are selecting 256 as number of examples i.e. batch_size for 10 epochs.
 """
 
 split_fraction = 0.715
@@ -274,7 +228,7 @@ val_data = features.loc[train_split:]
 """
 # Training dataset
 
-The training dataset labels starts from 792nd observation(720 + 72) to start + train_split.
+The training dataset labels starts from the 792nd observation (720 + 72).
 """
 
 start = past + future
@@ -286,10 +240,10 @@ y_train = features.iloc[start:end][[1]]
 sequence_length = int(past / step)
 
 """
-`timeseries_dataset_from_array` function takes in a sequence of data-points gathered at
+The `timeseries_dataset_from_array` function takes in a sequence of data-points gathered at
 equal intervals, along with time series parameters such as length of the
 sequences/windows, spacing between two sequence/windows, etc., to produce batches of
-timeseries inputs and targets.
+sub-timeseries inputs and targets sampled from the main timeseries.
 """
 
 dataset_train = keras.preprocessing.timeseries_dataset_from_array(
@@ -304,7 +258,7 @@ dataset_train = keras.preprocessing.timeseries_dataset_from_array(
 ## Validation dataset
 
 The validation dataset must not contain the last 792 rows as we won't have label data for
-those records, hence 792 must be subtracted from the x_end.
+those records, hence 792 must be subtracted from the end of the data.
 
 The validation label dataset must start from 792 after train_split, hence we must add
 past + future (792) to label_start.
@@ -345,11 +299,12 @@ model.compile(optimizer=keras.optimizers.Adam(learning_rate=learning_rate), loss
 model.summary()
 
 """
-Saving a checkpoint loads the weights from a trained model so that we don't have to train the
-model again and again whenever new runtime is started.
+We'll use the `ModelCheckpoint` callback to regualrly save checkpoints, and
+the `EarlyStopping` callback to interrupt training when the validation loss
+is not longer improving.
 """
 
-path_checkpoint = "model_checkpoint.keras"
+path_checkpoint = "model_checkpoint.h5"
 es_callback = keras.callbacks.EarlyStopping(monitor="val_loss", min_delta=0, patience=5)
 
 modelckpt_callback = keras.callbacks.ModelCheckpoint(
